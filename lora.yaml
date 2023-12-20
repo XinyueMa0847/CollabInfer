@@ -6,8 +6,7 @@ target:
   name: msrresrchvc
 
 environment:
-  registry: docker.io
-  image: publicrepository/nccl-tests-arc:deepspeed
+  image: amlt-sing/pytorch-1.9.0-cuda11.3-cudnn8-devel
   setup:
   - git clone https://github.com/XinyueMa0847/CollabInfer.git
   - pip install loralib
