@@ -1,0 +1,62 @@
+description: lora-test
+
+target:
+  service: sing
+  workspace_name: msrresrchws
+  name: msrresrchvc
+
+environment:
+  registry: docker.io
+  image: publicrepository/nccl-tests-arc:deepspeed
+  setup:
+  - git clone https://github.com/XinyueMa0847/CollabInfer.git
+  - pip install loralib
+  - cd LoRA ; pip install -r requirement.txt
+  - bash download_pretrained_checkpoints.sh
+  - bash create_datasets.sh
+  - cd ./eval
+  - bash download_evalscript.sh
+  - cd ..
+
+code:
+  local_dir: $CONFIG_DIR/examples/NLG
+
+jobs:
+- name: lora-test
+  # Number of nodes, number GPUs/CPUs to reserve and GPU/CPU memory
+  sku: G2-V100
+  mpi: False
+  process_count_per_node: -1
+  command:
+  - python -m torch.distributed.launch --nproc_per_node=1 src/gpt2_ft.py \
+      --train_data ./data/e2e/train.jsonl \
+      --valid_data ./data/e2e/valid.jsonl \
+      --train_batch_size 8 \
+      --grad_acc 1 \
+      --valid_batch_size 4 \
+      --seq_len 512 \
+      --model_card gpt2.sm \
+      --init_checkpoint ./pretrained_checkpoints/gpt2-pytorch_model.bin \
+      --platform local \
+      --clip 0.0 \
+      --lr 0.0002 \
+      --weight_decay 0.01 \
+      --correct_bias \
+      --adam_beta2 0.999 \
+      --scheduler linear \
+      --warmup_step 500 \
+      --max_epoch 5 \
+      --save_interval 1000 \
+      --lora_dim 4 \
+      --lora_alpha 32 \
+      --lora_dropout 0.1 \
+      --label_smooth 0.1 \
+      --work_dir ./trained_models/GPT2_M/e2e \
+      --random_seed 110
+  sla_tier: Standard
+  execution_mode: basic
+  priority: medium
+  azml_int: True
+  submit_args:
+    env:
+      {NCCL_DEBUG: "INFO"}
