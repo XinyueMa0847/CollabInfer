@@ -187,6 +187,7 @@ def train_validate(
     train_loader.sampler.set_epoch(epoch)
 
     for idx, data in enumerate(train_loader):
+        print(f"rank: {args.device}")
         data = {key: value for key, value in data.items()}
 
         _input = data['input'].to(args.device)
@@ -323,6 +324,8 @@ if __name__ == '__main__':
         print('loading model pretrained weight.')
         lm_net.load_weight(torch.load(args.init_checkpoint))    
 
+    # from torch.nn.parallel import DistributedDataParallel as DDP
+    # lm_net = DDP(lm_net,)
     lm_net = lm_net.cuda()
 
     if args.lora_dim > 0:

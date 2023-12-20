@@ -32,8 +32,9 @@ def distributed_opt(args, model, opt, grad_acc=1):
             opt, named_parameters=model.named_parameters(), backward_passes_per_step=grad_acc
         )
     elif args.platform == 'philly' or args.platform == 'k8s' or args.platform == 'local':
+        print(f"dist_opt: {args.rank}")
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.local_rank], output_device=args.local_rank, 
+            model, device_ids=[args.rank], output_device=args.rank, 
             find_unused_parameters=False, broadcast_buffers=False
         )
     return model, opt
@@ -57,7 +58,7 @@ def parse_gpu(args):
     
     if args.platform == 'local':
         dist.init_process_group(backend='nccl')
-        local_rank = torch.distributed.get_rank()
+        local_rank = int(os.environ["LOCAL_RANK"])
         torch.cuda.set_device(local_rank)
         device = torch.device('cuda', local_rank)
         args.rank = local_rank
