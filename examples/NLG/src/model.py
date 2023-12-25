@@ -227,8 +227,61 @@ class GPT2Model(nn.Module):
         self.ln_f = LayerNorm(config.n_embd, eps=config.layer_norm_epsilon)
 
         self.config = config
+        self.ld_map = []
+    def get_past(self, past=None, len_past=None):
+        if past is None: 
+            past_length = 0
+            past = [None] * len(self.h)
+        elif len_past is None:
+            # equal size for past. []
+            past_length = past[0][0].size(-2)
+        return past, past_length
+    def pos(self,position_ids, input_ids, len_past,past_length):
+        # Generate from INPUT_IDS
+        if position_ids is None and len_past is None: 
+            position_ids = torch.arange(
+                past_length, input_ids.size(-1) + past_length, 
+                dtype=torch.long, device=input_ids.device
+            )
+            position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
+        #  Mathcing with LEN_PAST 
+        elif len_past is not None:
+            position_ids = (len_past).unsqueeze(1) #.long()
+        # Else, do nothing
+        return position_ids
 
+    def set_pipeline(self, device_ids:list,config):
+        
+        # setup msg groups
+        self.p2p_groups = {}
+        for r in range(config.world_size-1):
+            self.p2p_groups[r] = (torch.distributed.new_group([r,r+1]))
+        self.p2p_groups[config.world_size-1]=(torch.distributed.new_group([config.world_size-1,0]))
 
+        # Semantic and Sanity checks 
+        if config.partitions is not None:
+            self.partitions = config.partitions
+            if not len(self.partitions ) == len(device_ids): raise Exception(f"pipeline partitions '--partitions' {len(self.partitions )} more than num of devices {len(device_ids)}")
+            if not self.partitions[-1] == self.n_layer : raise Exception("pipeline partitions '--partitions' > exceed number of layers in the model")
+        else: self.partitions = [self.n_layer]
+
+        self.ld_map=[]
+
+        self.num_stages = len(device_ids)
+            
+        stage_no,layer_st = 0,0
+        for layer_no in self.partitions: 
+            for i in range(layer_st, layer_no):
+                self.h[i].to(device_ids[stage_no])
+            devices = [device_ids[stage_no] for _ in range(layer_st, layer_no)]
+            self.ld_map.extend(devices)
+            layer_st = layer_no
+            stage_no += 1
+        
+        #Fixme    
+        self.wte.to(device_ids[0])
+        self.wpe.to(device_ids[0])
+        self.ln_f.to(device_ids[-1])
     def forward(
         self, 
         input_ids, 
@@ -237,42 +290,43 @@ class GPT2Model(nn.Module):
         past=None, 
         len_past=None
     ):
-        if past is None:
-            past_length = 0
-            past = [None] * len(self.h)
-        elif len_past is None:
-            # equal size for past. []
-            past_length = past[0][0].size(-2)
+        # Initialize PAST 
+        past, past_length = self.get_past(past,len_past)
 
-        if position_ids is None and len_past is None:
-            position_ids = torch.arange(
-                past_length, input_ids.size(-1) + past_length, 
-                dtype=torch.long, device=input_ids.device
-            )
-            position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
-        elif len_past is not None:
-            position_ids = (len_past).unsqueeze(1) #.long()
+        # Initialize position_ids 
+        position_ids = self.pos(position_ids,input_ids,len_past,past_length)
 
-        input_shape = input_ids.size()
-        input_ids = input_ids.view(-1, input_ids.size(-1))
-        position_ids = position_ids.view(-1, position_ids.size(-1))
-
-        inputs_embeds = self.wte(input_ids)     
-
-        position_embeds = self.wpe(position_ids)
+        # Embeddings 
+        inputs_embeds = self.wte(input_ids.view(-1, input_ids.size(-1)))     
+        position_embeds = self.wpe(position_ids.view(-1, position_ids.size(-1)))
 
         if token_type_ids is not None:
-            token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1))
-            token_type_embeds = self.wte(token_type_ids)
+            token_type_embeds = self.wte(token_type_ids.view(-1, token_type_ids.size(-1)))
         else:
             token_type_embeds = 0
-        hidden_states = inputs_embeds + position_embeds + token_type_embeds
+            
+        # Hiddent States
+        hidden_states = inputs_embeds + position_embeds + token_type_embeds\
+            
+        # Attention blocks
         presents = []
-        for block, layer_past in zip(self.h, past):
-            hidden_states, present = block(hidden_states, layer_past = layer_past, len_past=len_past)
-            presents.append(present)
-        hidden_states = self.ln_f(hidden_states)
-        output_shape = input_shape + (hidden_states.size(-1),)
+        if  len(self.ld_map)>0:
+            stage_no=0
+            for i, block, layer_past,device in enumerate(zip(self.h, past,self.ld_map)):
+                if i >= self.partitions[stage_no]: 
+                    stage_no+=1
+                    torch.distributed.board
+                hidden_states, present = block(hidden_states.to(device), layer_past = layer_past, len_past=len_past)
+                presents.append(present)
+            hidden_states = self.ln_f(hidden_states.to(device))
+        else:
+            for block, layer_past in zip(self.h, past):
+                hidden_states, present = block(hidden_states, layer_past = layer_past, len_past=len_past)
+                presents.append(present)
+            # Post Processing
+            hidden_states = self.ln_f(hidden_states)
+        output_shape = input_ids.size() + (hidden_states.size(-1),)
+
         return hidden_states.view(*output_shape), presents
 
 
@@ -281,18 +335,60 @@ class GPT2LMHead(nn.Module):
         super(GPT2LMHead, self).__init__()
         self.n_embd = config.n_embd
         self.set_embeddings_weights(model_embeddings_weights)
+        self.device = 0 
 
     def set_embeddings_weights(self, model_embeddings_weights):
         embed_shape = model_embeddings_weights.shape
         self.decoder = nn.Linear(embed_shape[1], embed_shape[0], bias=False)
         self.decoder.weight = model_embeddings_weights  # Tied weights
 
+    def set_pipeline(self, device_ids):
+        # Heads are always on the last partition
+        # Put layers to different devices 
+        self.device = device_ids[0]
+        self.decoder.to(self.device)
+        
     def forward(self, hidden_state):
         # Truncated Language modeling logits (we remove the last token)
         # h_trunc = h[:, :-1].contiguous().view(-1, self.n_embd)
+        
         lm_logits = self.decoder(hidden_state)
         return lm_logits
 
+
+# class GPT2Config(object):
+#     def __init__(
+#         self,
+#         vocab_size_or_config_json_file=50257,
+#         n_positions=1024,
+#         n_ctx=1024,
+#         n_embd=768,
+#         n_layer=12,
+#         n_head=12,
+#         layer_norm_epsilon=1e-5,
+#         initializer_range=0.02,
+#         lora_attn_dim=0,
+#         lora_attn_alpha=128,
+#         lora_dropout=0.0,
+#         lora_r_dropout=0.0,
+#         fix_dropout=0.0,
+#         partitions=None
+#     ):
+#         self.vocab_size = vocab_size_or_config_json_file
+#         self.n_ctx = n_ctx
+#         self.n_positions = n_positions
+#         self.n_embd = n_embd
+#         self.n_layer = n_layer
+#         self.n_head = n_head
+#         self.layer_norm_epsilon = layer_norm_epsilon
+#         self.initializer_range = initializer_range
+#         self.lora_attn_dim = lora_attn_dim
+#         self.lora_attn_alpha = lora_attn_alpha
+#         self.lora_dropout = lora_dropout
+#         self.lora_r_dropout = lora_r_dropout
+
+#         self.fix_dropout = fix_dropout
+#         self.partitions=partitions
 
 class GPT2Config(object):
     def __init__(
@@ -310,6 +406,8 @@ class GPT2Config(object):
         lora_dropout=0.0,
         lora_r_dropout=0.0,
         fix_dropout=0.0,
+        partitions=None,
+        world_size=1
     ):
         self.vocab_size = vocab_size_or_config_json_file
         self.n_ctx = n_ctx
@@ -325,19 +423,25 @@ class GPT2Config(object):
         self.lora_r_dropout = lora_r_dropout
 
         self.fix_dropout = fix_dropout
+        self.partitions=partitions
+        self.world_size = world_size
 
 
 class GPT2LMModel(nn.Module):
     def __init__(self, config):
         super(GPT2LMModel, self).__init__()
+        self.config=config
         self.transformer = GPT2Model(config)
-        self.lm_head = GPT2LMHead(self.transformer.wte.weight, config)
+        self.lm_head = GPT2LMHead(self.transformer.wte.weight, config) # head has to be on the same device as the embedding
         self.apply(self._init_weights)
 
     def set_tied(self):
         """ Make sure we are sharing the embeddings"""
         self.lm_head.set_embeddings_weights(self.transformer.wte.weight)
 
+    def set_pipeline(self,device_ids):
+        self.transformer.set_pipeline(device_ids,self.config)
+        self.lm_head.set_pipeline(device_ids)
     def forward(
         self, 
         input_ids, 

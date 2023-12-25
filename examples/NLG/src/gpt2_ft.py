@@ -8,6 +8,7 @@ import math
 import os, sys
 import numpy as np
 import itertools
+import json
 
 import torch
 import random
@@ -89,6 +90,14 @@ parser.add_argument('--roll_lr', type=float, default=0.00001, help='rolling lear
 parser.add_argument('--roll_step', type=int, default=100, help='rolling step')
 
 parser.add_argument('--eval_epoch', type=int, default=1, help='eval per number of epochs')
+
+parser.add_argument('--pipeline', type=int, default=1, help='pipeline parallel')
+
+parser.add_argument('--gpu', type=json.loads, default=[0], help='pipeline parallel')
+
+parser.add_argument('--partitions', type=json.loads, default=None, help='pipeline partition')
+
+parser.add_argument('--ddp', type=bool, default=False, help='pipeline partition')
 
 # influence model, calculate the influence score between two samples.
 def print_args(args):
@@ -187,7 +196,6 @@ def train_validate(
     train_loader.sampler.set_epoch(epoch)
 
     for idx, data in enumerate(train_loader):
-        print(f"rank: {args.device}")
         data = {key: value for key, value in data.items()}
 
         _input = data['input'].to(args.device)
@@ -303,6 +311,7 @@ if __name__ == '__main__':
             lora_attn_dim=args.lora_dim, 
             lora_attn_alpha=args.lora_alpha, 
             lora_dropout=args.lora_dropout,
+            partitions=args.partitions
         )
     elif args.model_card == 'gpt2.md':
         config = GPT2Config(
@@ -310,6 +319,7 @@ if __name__ == '__main__':
             lora_attn_dim=args.lora_dim, 
             lora_attn_alpha=args.lora_alpha, 
             lora_dropout=args.lora_dropout,
+            partitions=args.partitions
         )
     elif args.model_card == 'gpt2.lg':
         config = GPT2Config(
@@ -317,6 +327,7 @@ if __name__ == '__main__':
             lora_attn_dim=args.lora_dim, 
             lora_attn_alpha=args.lora_alpha, 
             lora_dropout=args.lora_dropout,
+            partitions=args.partitions
         )
 
     lm_net = GPT2LMModel(config)
@@ -324,10 +335,8 @@ if __name__ == '__main__':
         print('loading model pretrained weight.')
         lm_net.load_weight(torch.load(args.init_checkpoint))    
 
-    # from torch.nn.parallel import DistributedDataParallel as DDP
-    # lm_net = DDP(lm_net,)
-    lm_net = lm_net.cuda()
-
+    # lm_net.set_pipeline(args.device_ids)
+        
     if args.lora_dim > 0:
         lora.mark_only_lora_as_trainable(lm_net)
     optimizer = create_adam_optimizer_from_args(lm_net, args)
@@ -339,7 +348,14 @@ if __name__ == '__main__':
     scheduler = create_optimizer_scheduler(optimizer, args)
     if args.fp16:
         lm_net, optimizer = amp.initialize(lm_net, optimizer, opt_level="O1")
-    lm_net, optimizer = distributed_opt(args, lm_net, optimizer, grad_acc=args.grad_acc)
+    
+    if args.pipeline:
+        
+        lm_net.set_pipeline(args.device_ids)
+    elif args.ddp:
+        lm_net.cuda()
+        lm_net, optimizer = distributed_opt(args, lm_net, optimizer, grad_acc=args.grad_acc)
+
 
     try:
         train_step = 0

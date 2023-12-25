@@ -49,7 +49,40 @@ There are several directories in this repo:
 
 1. Train GPT-2 Medium with LoRA (see our paper for hyperparameters for GPT-2 Medium)
 ```
-torchrun --nproc_per_node=2 src/gpt2_ft.py \
+# 4-gpu pipeleine
+torchrun --nproc_per_node=1 src/gpt2_ft.py \
+    --train_data ./data/e2e/sample_train.jsonl \
+    --valid_data ./data/e2e/sample_valid.jsonl \
+    --train_batch_size 1 \
+    --grad_acc 1 \
+    --valid_batch_size 4 \
+    --seq_len 512 \
+    --model_card gpt2.sm \
+    --init_checkpoint ./pretrained_checkpoints/gpt2-pytorch_model.bin \
+    --platform local \
+    --clip 0.0 \
+    --lr 0.0002 \
+    --weight_decay 0.01 \
+    --correct_bias \
+    --adam_beta2 0.999 \
+    --scheduler linear \
+    --warmup_step 500 \
+    --max_epoch 5 \
+    --save_interval 1000 \
+    --lora_dim 4 \
+    --lora_alpha 32 \
+    --lora_dropout 0.1 \
+    --label_smooth 0.1 \
+    --work_dir ./trained_models/GPT2_S/test \
+    --random_seed 110 \
+    --pipeline 4 \
+    --ddp false\
+    --partitions [0,2,6,10,12] \
+    > output.log
+```
+
+# Single GPU
+torchrun --nproc_per_node=1 src/gpt2_ft.py \
     --train_data ./data/e2e/train.jsonl \
     --valid_data ./data/e2e/valid.jsonl \
     --train_batch_size 8 \
@@ -73,8 +106,63 @@ torchrun --nproc_per_node=2 src/gpt2_ft.py \
     --lora_dropout 0.1 \
     --label_smooth 0.1 \
     --work_dir ./trained_models/GPT2_S/test \
-    --random_seed 110
-```
+    --random_seed 110 \
+    --pipeline 1 \
+    --ddp false\
+    > single.log
+
+# DP 4gpu
+torchrun --nproc_per_node=4 src/gpt2_ft.py \
+    --train_data ./data/e2e/train.jsonl \
+    --valid_data ./data/e2e/valid.jsonl \
+    --train_batch_size 8 \
+    --grad_acc 1 \
+    --valid_batch_size 4 \
+    --seq_len 512 \
+    --model_card gpt2.sm \
+    --init_checkpoint ./pretrained_checkpoints/gpt2-pytorch_model.bin \
+    --platform local \
+    --clip 0.0 \
+    --lr 0.0002 \
+    --weight_decay 0.01 \
+    --correct_bias \
+    --adam_beta2 0.999 \
+    --scheduler linear \
+    --warmup_step 500 \
+    --max_epoch 5 \
+    --save_interval 1000 \
+    --lora_dim 4 \
+    --lora_alpha 32 \
+    --lora_dropout 0.1 \
+    --label_smooth 0.1 \
+    --work_dir ./trained_models/GPT2_S/test \
+    --random_seed 110 \
+    --pipeline 0 \
+    --ddp true\
+    > dp4.log
+
+# PP test
+torchrun --nproc_per_node=4 src/gpt2_pipe_ft.py \
+    --train_data ./data/e2e/sample_train.jsonl \
+    --valid_data ./data/e2e/sample_val.jsonl \
+    --train_batch_size 1 \
+    --grad_acc 1 \
+    --valid_batch_size 4 \
+    --seq_len 512 \
+    --model_card gpt2.sm \
+    --init_checkpoint ./pretrained_checkpoints/gpt2-pytorch_model.bin \
+    --clip 0.0 \
+    --save_interval 1000 \
+    --lora_dim 4 \
+    --lora_alpha 32 \
+    --lora_dropout 0.1 \
+    --label_smooth 0.1 \
+    --work_dir ./trained_models/GPT2_S/test \
+    --pipeline 0 \
+    --ddp true\
+    --partitions [0,2,6,10,12] \
+    > pptest.log
+
 
 2. Generate outputs from the trained model using beam search:
 ```
