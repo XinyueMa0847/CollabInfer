@@ -18,7 +18,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.nn.parameter import Parameter
 
 import loralib as lora
-
+import torch.distributed.rpc as rpc
 
 def gelu(x):
     return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
@@ -56,14 +56,18 @@ class LayerNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.bias = nn.Parameter(torch.zeros(hidden_size))
         self.variance_epsilon = eps
-
     def forward(self, x):
         u = x.mean(-1, keepdim=True)
         s = (x - u).pow(2).mean(-1, keepdim=True)
         x = (x - u) / torch.sqrt(s + self.variance_epsilon)
         return self.weight * x + self.bias
 
-
+    def disable_grad(self):
+        for _, p in self.named_parameters():
+            p.requires_grad = False
+    def param_rrefs(self):
+        # preserve name too? 
+        return [rpc.RRef(p) for p in self.parameters()]
 class Conv1D(nn.Module):
     def __init__(self, nf, nx):
         super(Conv1D, self).__init__()
@@ -432,7 +436,7 @@ class GPT2LMModel(nn.Module):
         super(GPT2LMModel, self).__init__()
         self.config=config
         self.transformer = GPT2Model(config)
-        self.lm_head = GPT2LMHead(self.transformer.wte.weight, config) # head has to be on the same device as the embedding
+        self.lm_head = GPT2LMHead(self.transformer.wte.weight, config) 
         self.apply(self._init_weights)
 
     def set_tied(self):
@@ -512,7 +516,7 @@ class GPT2LMModel(nn.Module):
            
     def _init_weights(self, module):
         if isinstance(module, (nn.Linear, nn.Embedding)):
-            module.weight.data.normal_(mean=0.0, std=0.02)
+            module.weight.data.normal_(mean=0.0, std=0.02) # for merged_linear
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)

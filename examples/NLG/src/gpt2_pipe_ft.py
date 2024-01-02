@@ -21,6 +21,23 @@ from torch.utils.data import DataLoader
 import json
 from model import GPT2Config
 from model import Block, LayerNorm
+import random
+
+from gpu import (
+    add_gpu_params, 
+    parse_gpu, 
+    distributed_opt, 
+    distributed_gather, 
+    distributed_sync, 
+    cleanup
+)
+
+from optimizer import (
+    create_adam_optimizer, 
+    create_optimizer_scheduler, 
+    add_optimizer_params, 
+    create_adam_optimizer_from_args
+)
 
 # os.environ["LOCAL_RANK"]='0'
 # os.environ["RANK"]='0'
@@ -32,6 +49,10 @@ import warnings
 warnings.filterwarnings("ignore")
 
 parser = argparse.ArgumentParser(description='PyTorch GPT2 pipeline ft script')
+
+add_gpu_params(parser)
+add_optimizer_params(parser)
+
 parser.add_argument('--train_data', required=True, help='location of training data corpus')
 
 parser.add_argument('--valid_data', required=True, help='location of validation data corpus')
@@ -90,7 +111,13 @@ parser.add_argument('--partitions', type=json.loads, default=None, help='pipelin
 
 parser.add_argument('--ddp', type=bool, default=False, help='pipeline partition')
 
-    
+def print_args(args):
+    if args.rank == 0:
+        print('=' * 100)
+        for k, v in args.__dict__.items():
+            print(f'        - {k} : {v}')
+        print('=' * 100)
+        
 class GPT2Stage(nn.Module):
     def __init__(self, layer_nos,device,world_size,config):
         super(GPT2Stage, self).__init__()
@@ -104,6 +131,7 @@ class GPT2Stage(nn.Module):
             self.wte = nn.Embedding(config.vocab_size, config.n_embd).to(device)
             self.wpe = nn.Embedding(config.n_positions, config.n_embd).to(device)
         elif self.layer_last == self.n_layer: 
+            self.wte = nn.Embedding(config.vocab_size, config.n_embd).to(device)
             self.ln_f = LayerNorm(config.n_embd, eps=config.layer_norm_epsilon).to(device)
 
         block = Block(config.n_ctx, config, scale=True)
@@ -138,14 +166,17 @@ class GPT2Stage(nn.Module):
         # Else, do nothing
         return position_ids
 
-    def set_pipeline(self, device_ids:list,config):
+    def set_pipeline(self, device_ids:list,config, p2p_groups=None):
         
         # setup p2p subgroups
         # Pytorch does not support nccl send and recv, we mimic the behavior by broadcast within group of 2 
-        self.p2p_groups = {}
-        for r in range(config.world_size-1):
-            self.p2p_groups[r] = (torch.distributed.new_group([r,r+1]))
-        self.p2p_groups[config.world_size-1]=(torch.distributed.new_group([config.world_size-1,0]))
+        if p2p_groups is not None: 
+            self.p2p_groups = p2p_groups
+        else:
+            self.p2p_groups = {}
+            for r in range(config.world_size-1):
+                self.p2p_groups[r] = (torch.distributed.new_group([r,r+1]))
+            self.p2p_groups[config.world_size-1]=(torch.distributed.new_group([config.world_size-1,0]))
         
         # Semantic and Sanity checks 
         if config.partitions is not None:
@@ -218,6 +249,30 @@ class GPT2Stage(nn.Module):
         else: 
             return None, None
 
+class GPT2LMHead(nn.Module):
+    def __init__(self, model_embeddings_weights, config):
+        super(GPT2LMHead, self).__init__()
+        self.n_embd = config.n_embd
+        self.set_embeddings_weights(model_embeddings_weights) # unnecessary at the init stage
+        self.device = 0 
+
+    def set_embeddings_weights(self, model_embeddings_weights):
+        embed_shape = model_embeddings_weights.shape
+        self.decoder = nn.Linear(embed_shape[1], embed_shape[0], bias=False)
+        self.decoder.weight = model_embeddings_weights  # Tied weights
+
+    def set_pipeline(self, device_ids):
+        # Heads are always on the last partition
+        # Put layers to different devices 
+        self.device = device_ids[0]
+        self.decoder.to(self.device)
+        
+    def forward(self, hidden_state):
+        # Truncated Language modeling logits (we remove the last token)
+        # h_trunc = h[:, :-1].contiguous().view(-1, self.n_embd)
+        
+        lm_logits = self.decoder(hidden_state)
+        return lm_logits
 class IdentityStage(nn.Module):
     def __init__(self,device):
         super(IdentityStage,self).__init__()
@@ -257,15 +312,101 @@ class TestModel(nn.Module):
             return intermediate
 
 class GPT2PipeLMModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, layer_nos,device,world_size, config):
         super(GPT2PipeLMModel, self).__init__()
+        self.output_device = world_size-1
         self.config=config
-        self.transformer = GPT2Stage(config)
-        
+        self.transformer = GPT2Stage(layer_nos,device,world_size,config)
+        self.device = device
         # How to communicate this part? 
         # 1. board_cast in first stage, use the prev_group
-        self.lm_head = GPT2PipeLMModel(self.transformer.wte.weight, config) # head has to be on the same device as the embedding
+        if self.device == self.output_device: 
+            self.lm_head = GPT2LMHead(self.transformer.wte.weight, config).to(device) # head has to be on the same device as the embedding
+
         self.apply(self._init_weights)
+    
+    def set_tied(self):
+        """ Make sure we are sharing the embeddings"""
+        self.lm_head.set_embeddings_weights(self.transformer.wte.weight)
+        
+    def parse_pretrained_weight(self, state_dict):
+        if 'model_state_dict' in state_dict:
+            state_dict = state_dict['model_state_dict']
+    
+        state_dict_tmp = copy.deepcopy(state_dict)
+        
+        old_keys = []
+        new_keys = []
+        for key in state_dict_tmp:
+            new_key = None
+            if key.endswith(".g"):
+                new_key = key[:-2] + ".weight"
+            elif key.endswith(".b"):
+                new_key = key[:-2] + ".bias"
+            elif key.endswith(".w"):
+                new_key = key[:-2] + ".weight"
+            
+            if key.startswith("module.transformer."):
+                new_key = key[len("module.transformer."):]
+
+            if new_key:
+                old_keys.append(key)
+                new_keys.append(new_key)
+
+        for old_key, new_key in zip(old_keys, new_keys):
+            state_dict[new_key] = state_dict.pop(old_key)
+
+        # remove params for other stages 
+        target_layers=[]
+        layer_st, layer_last = self.transformer.layer_st, self.transformer.layer_last
+        if self.device == 0:
+            target_layers.extend(['wte','wpe'])
+        if self.device == self.output_device:
+            target_layers.extend(['wte'])
+            target_layers.extend(['ln_f'])
+        target_layers.extend([f'h.{x}' for x in range(layer_st,layer_last)] )
+        
+        for key in list(state_dict.keys()):
+            if not key in target_layers:
+                state_dict.pop(key)
+    
+        # keep the ones pretrained model does not contain
+        for n, p in self.transformer.named_parameters():
+            if n not in state_dict:
+                state_dict[n] = p
+        return state_dict
+    
+    def load_weight(self, state_dict):
+        state_dict = self.parse_pretrained_weight(state_dict)
+        print(f'Node {self.device}, keys={list((state_dict.keys()))}')
+        self.transformer.load_state_dict(state_dict, strict=False)
+        if self.device == self.output_device:
+            self.set_tied()
+
+    def _init_weights(self, module):
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            module.weight.data.normal_(mean=0.0, std=0.02)
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            module.bias.data.zero_()
+
+    def set_pipeline(self, device_ids:list,config, p2p_groups=None):
+        
+        # setup p2p subgroups
+        # Pytorch does not support nccl send and recv, we mimic the behavior by broadcast within group of 2 
+        if p2p_groups is not None: 
+            self.p2p_groups = p2p_groups
+        else:
+            self.p2p_groups = {}
+            for r in range(config.world_size-1):
+                self.p2p_groups[r] = (torch.distributed.new_group([r,r+1]))
+            self.p2p_groups[config.world_size-1]=(torch.distributed.new_group([config.world_size-1,0]))
+        
+        self.transformer.set_pipeline(device_ids,config, self.p2p_groups)
+   
+
     def forward(
         self, 
         input_ids, 
@@ -279,10 +420,212 @@ class GPT2PipeLMModel(nn.Module):
         _batch, _len = input_ids.shape
         hidden_states, presents = self.transformer(input_ids, past=past, len_past=len_past) # pipelined, final results in last stage
 
-def main():
+        if self.device == self.output_device:
+            lm_logits = self.lm_head(hidden_states)
+            if lm_labels is not None: 
+                
+                if is_report_accuracy: 
+                    _pred_token = torch.argmax(lm_logits, dim=-1)
+                    _hit = (_pred_token == lm_labels) * lm_mask
+                    
+                    _t1_acc = torch.zeros(_batch, dtype=torch.float, device=self.device)
+                    _all_acc = torch.zeros(_batch, dtype=torch.float, device=self.device)
+                    
+                    for _b in range(0, _batch):
+                        for _i in range(0, _len):
+                            if lm_mask[_b, _i] >= 1.0:
+                                if _hit[_b, _i] > 0:
+                                    _t1_acc[_b] = 1.0 
+                                break 
+                    
+                    _is_succ = True 
+                    for _i in range(0, _len):
+                        if lm_mask[_b, _i] >= 1.0: 
+                            if _hit[_b, _i] <= 0:
+                                _is_succ = False 
+                                break
+                    
+                    if _is_succ:
+                        _all_acc[_b] = 1.0 
+                    
+                if label_smooth > 0.0001:
+                    logprobs = torch.nn.functional.log_softmax(lm_logits.view(-1, lm_logits.size(-1)), dim=-1)
+                    nll_loss = -logprobs.gather(dim=-1, index=lm_labels.view(-1).unsqueeze(1))
+                    nll_loss = nll_loss.squeeze(1)
+                    smooth_loss = -logprobs.mean(dim=-1)
+                    loss = (1.0 - label_smooth) * nll_loss + label_smooth + smooth_loss
+                    loss = loss.view(_batch, _len)
+                else:
+                    loss_fct = nn.CrossEntropyLoss(ignore_index=-1, reduce=False) 
+                    loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), lm_labels.view(-1)).view(_batch, _len)
+                
+                if lm_mask is None: 
+                    lm_mask = torch.ones(loss.shape, dtype=loss.dtype, device = self.device)
+                loss = loss * lm_mask 
+                
+                loss = loss.sum() / (lm_mask.sum() + 0.0001)
+                
+                if is_report_accuracy:
+                    return lm_logits, loss, _t1_acc, _all_acc
+                else: 
+                    return lm_logits, presents
+        return None, presents
     
+class AverageMeter(object):
+    """Computes and stores the average and current value
+         Imported from https://github.com/pytorch/examples/blob/master/imagenet/main.py#L247-L262
+    """
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+def optimizer_step(_loss, _optimizer, _model, _schedule, args, is_update=True):
+    if args.fp16:
+        with amp.scale_loss(_loss, _optimizer) as _scaled_loss:
+            _scaled_loss.backward()
+    else: 
+        _loss.backward()
+    
+    if is_update: 
+        if args.clip > 0:
+            if args.fp16:
+                torch.nn.tuils.clip_grad_norm_(amp.master_params(_optimizer), args.clip)
+            else: 
+                torch.nn.utils.clip_grad_norm_(_model.parameters(), args.clip)
+        
+        _optimizer.step()
+        _optimizer.zero_grad()
+    
+    if _schedule is not None: 
+        _schedule.step()
+        
+
+def evaluate(model, valid_loader, args):
+    model.eval()
+    total_loss = 0.
+    start_time = time.time()
+    
+    avg_lm_loss = AverageMeter()
+    
+    with torch.no_grad():
+        for idx, data in enumerate(valid_loader):
+            data = {key: value for key, value in data.items()}
+            
+            _input = data['input'].to(args.device)
+            _target = data['target'].to(args.device)
+            _msk = data['mask'].to(args.device)
+            
+            _lm_logits, _loss = model(_input, lm_labels=_target, lm_mask=_msk)
+            loss = _loss.mean()
+            
+            avg_lm_loss.update(loss.item())
+            
+            if idx % 100 == 0: 
+                print('eval samples:', idx, 'loss', loss.float())
+                
+        total_time = time.time() - start_time 
+        print('average loss', avg_lm_loss)
+    return avg_lm_loss.avg, math.exp(avg_lm_loss.avg)
+
+        
+def train_validate(
+    model,
+    optimizer, 
+    scheduler, 
+    train_loader,
+    valid_loader, 
+    args,
+    train_step=0,
+    epoch=0
+):
+    model.train()
+    avg_lm_loss = AverageMeter()
+    print('start to train the model............', epoch)
+    log_start_time = time.time()
+    best_val_ppl = None
+    
+    for idx, data in enumerate(train_loader):
+        data = {key: value for key, value in data.items()}
+        
+        _input = data['input'].to(args.device)
+        _target = data['target'].to(args.device)
+        _msk = data['mask'].to(args.device)
+
+        _lm_logits, _lm_loss = model(
+            _input, lm_labels=_target, lm_mask=_msk, label_smooth=args.label_smooth
+        )
+        
+        # if 
+        _lm_loss = _lm_loss.mean()
+        
+        train_step += 1
+        is_update = True if train_step % args.grad_acc == 0 else False 
+        avg_lm_loss.update(_lm_loss.item())
+        optimizer.step(
+            _lm_loss/(args.grad_acc), optimizer, model, scheduler, args, is_update=is_update
+        )
+        
+        if train_step % args.save_interval == 0:
+            if args.rank == 0:
+                model_path = os.path.join(args.work_dir, f'model.{train_step}.pt')
+                print(f'saving checkpointing {model_path}')
+                torch.save({'model_state_dict': {lora.lora_state_dict(model)}}, model_path)
+            args.dist.barrier()
+        
+        # evaluation interval
+        if train_step % args.eval_interval == 0: 
+            eval_start_time = time.time()
+            
+            valid_loss, valid_ppl = evaluate(model, valid_loader, args)
+            
+            if best_val_ppl is None or valid_ppl < best_val_ppl:
+                best_val_ppl = valid_ppl
+                
+            log_str = f'| Eval {train_step // args.eval_interval:3d} at step {train_step:>8d} | '\
+                      f'time: {time.time() - eval_start_time:5.2f}s | valid loss {valid_loss:5.2f} | ' \
+                      f'valid ppl {valid_ppl:5.2f} | best ppl {best_val_ppl:5.2f} '
+            
+            if args.rank == 0:
+                print('-' * 100)
+                print(log_str)
+                print('-' * 100)
+                
+            model.train()
+            args.dist.barrier()
+        
+        if train_step == args.max_step:
+            break
+        
+    if args.rank == 0: 
+        model.path = os.path.join(args.work_dir, f'model.{train_step}.pt')
+        print('saving checkpoint', model_path)
+        torch.save({'model_state_dict': model.state_dict()}, model_path)
+    args.dist.barrier()
+    return train_step
+             
+if __name__ == '__main__':
     args = parser.parse_args()
 
+    if args.fp16:
+        try:
+            from apex import amp
+        except Exception as e:
+            warnings.warn('Could not import amp, apex may not be installed')
+            
+    torch.manual_seed(args.random_seed)
+    random.seed(args.random_seed)
+    
     # TODO: Fill for sing and k8s
     # torch.distributed init
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -291,7 +634,10 @@ def main():
     
     world_size = torch.distributed.get_world_size()
     world = [i for i in range(world_size)]
+    print(world)
     output_device = world_size-1
+
+    # print_args(args)
 
     train_data = FT_Dataset(
         args.train_data, args.train_batch_size, args.seq_len, 
@@ -305,13 +651,13 @@ def main():
     train_loader = DataLoader(
         train_data, batch_size=args.train_batch_size, num_workers=0, 
         shuffle=False, pin_memory=False, drop_last=True,
-        sampler=torch.utils.data.SequentialSampler(train_data)
+        sampler=torch.utils.data.RandomSampler(train_data)
     )
     
     valid_loader = DataLoader(
         valid_data, batch_size=args.valid_batch_size, num_workers=0, 
         shuffle=False, pin_memory=False, drop_last=False,
-        sampler=torch.utils.data.SequentialSampler(valid_data)
+        sampler=torch.utils.data.RandomSampler(valid_data)
     )
 
 
@@ -325,66 +671,55 @@ def main():
     )
 
     pipes = [[args.partitions[i],args.partitions[i+1]] for i in range(world_size)]
-    model = GPT2Stage(pipes[local_rank],local_rank,world_size,config)    
-    model.set_pipeline(world,config)
-    for idx, data in enumerate(train_loader):
-        data = {key: value for key, value in data.items()}
-        _input = data['input'].to(local_rank)
-        # _target = data['target'].to(args.device)
-        # _msk = data['mask'].to(args.device)
-        
-        hidden_states, presents = model(_input)
-        if local_rank == output_device:
-            print(presents.shape)
-        
-    # Make different groups to mimic p2p
-    # p2p_groups = {}
-    # for r in range(world_size-1):
-    #     p2p_groups[r] = (dist.new_group([r,r+1]))
-    # p2p_groups[world_size-1]=(dist.new_group([world_size-1,0]))
-        
-    # test_tensor = torch.tensor([0,0,0,0],device=rank)
-    # if rank==0: 
-    #     test_tensor = torch.tensor([1,1,1,1],device=rank)
-    #     dist.broadcast(test_tensor,0,group=p2p_groups[0]) # send
-    #     dist.broadcast(test_tensor,3,group=p2p_groups[3]) # recv
-    #     print(f'rank {rank}, value: {test_tensor}',flush=True)
-    # elif rank==1:
-    #     dist.broadcast(test_tensor,0,group=p2p_groups[0]) # recv
-    #     print(f'rank {rank}, value: {test_tensor}',flush=True)
-    #     test_tensor +=1
-    #     dist.broadcast(test_tensor,1,group=p2p_groups[1]) # send
-    # elif rank==2:
-    #     dist.broadcast(test_tensor,1,group=p2p_groups[1]) # recv
-    #     print(f'rank {rank}, value: {test_tensor}',flush=True)
-    #     test_tensor +=1
-    #     dist.broadcast(test_tensor,2,group=p2p_groups[2]) # send
-    # elif rank==3:
-    #     dist.broadcast(test_tensor,2,group=p2p_groups[2]) # recv
-    #     print(f'rank {rank}, value: {test_tensor}',flush=True)
-    #     test_tensor +=1
-    #     dist.broadcast(test_tensor,3,group=p2p_groups[3]) # send
-
-    # if rank==0: 
-    #     test_tensor = torch.tensor([1,1,1,1],device=rank)
-    #     dist.send(test_tensor,1,group=p2p_groups[0]) # send
-    #     dist.recv(test_tensor,3,group=p2p_groups[3]) # recv
-    #     print(f'rank {rank}, value: {test_tensor}',flush=True)
-    # elif rank==1:
-    #     dist.recv(test_tensor,0,group=p2p_groups[0]) # recv
-    #     print(f'rank {rank}, value: {test_tensor}',flush=True)
-    #     test_tensor +=1
-    #     dist.send(test_tensor,2,group=p2p_groups[1]) # send
-    # elif rank==2:
-    #     dist.recv(test_tensor,1,group=p2p_groups[1]) # recv
-    #     print(f'rank {rank}, value: {test_tensor}',flush=True)
-    #     test_tensor +=1
-    #     dist.send(test_tensor,3,group=p2p_groups[2]) # send
-    # elif rank==3:
-    #     dist.recv(test_tensor,2,group=p2p_groups[2]) # recv
-    #     print(f'rank {rank}, value: {test_tensor}',flush=True)
-    #     test_tensor +=1
-    #     dist.send(test_tensor,0,group=p2p_groups[3]) # send
+    model = GPT2PipeLMModel(pipes[local_rank], local_rank, world_size,config)
+    print(f'Current arch on GPU {local_rank}: {model}')
     
-main()
+    model.set_pipeline(world,config)
+        
+    if args.init_checkpoint is not None: 
+        print('loading model pretrained weight.')
+        model.load_weight(torch.load(args.init_checkpoint)) # Need to redesign
+    
+    if args.lora_dim > 0: 
+        lora.mark_only_lora_as_trainable(model)
+    optimizer = create_adam_optimizer_from_args(model, args) # distribtued opt? 
+    
+    if args.max_step is None: 
+        print(args.max_epoch)
+        print(train_data.num_batches)
+        print(world_size)
+        args.max_step = (args.max_epoch * train_data.num_batches + world_size -1) // world_size
+        print('set max_step:', args.max_step)
+        
+    scheduler = create_optimizer_scheduler(optimizer, args)
+    
+    if args.fp16: 
+        model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
+        
+    try: 
+        train_step = 0
+        for epoch in itertools.count(start=1):
+            train_step = train_validate(
+                model, optimizer, scheduler, train_loader, valid_loader, args, 
+                train_step=train_step, epoch=epoch
+            )
+            
+            if train_step >= args.max_step or (args.max_epoch is not None and epoch >= args.max_epoch):
+                if args.rank == 0:
+                    print('-' * 100)
+                    print('End of training')
+                break 
+    except KeyboardInterrupt:
+        if args.rank == 0:
+            print('-' * 100)
+            print('Exiting from training early')
+    
+    dist.barrier()
+    print('cleanup dist ...')
+    cleanup(args)
+    
+    
+    
+    
+    
 

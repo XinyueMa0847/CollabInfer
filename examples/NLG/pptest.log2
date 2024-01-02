@@ -1,0 +1,519 @@
+RPC_init rank0
+RPC_init rank1
+rpc shutdown ...
+wte.weight
+torch.Size([50257, 768])
+wpe.weight
+torch.Size([1024, 768])
+h.0.ln_1.weight
+torch.Size([768])
+h.0.ln_1.bias
+torch.Size([768])
+h.0.attn.c_attn.weight
+torch.Size([768, 2304])
+h.0.attn.c_attn.bias
+torch.Size([2304])
+h.0.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.0.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.0.attn.c_proj.weight
+torch.Size([768, 768])
+h.0.attn.c_proj.bias
+torch.Size([768])
+h.0.ln_2.weight
+torch.Size([768])
+h.0.ln_2.bias
+torch.Size([768])
+h.0.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.0.mlp.c_fc.bias
+torch.Size([3072])
+h.0.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.0.mlp.c_proj.bias
+torch.Size([768])
+h.1.ln_1.weight
+torch.Size([768])
+h.1.ln_1.bias
+torch.Size([768])
+h.1.attn.c_attn.weight
+torch.Size([768, 2304])
+h.1.attn.c_attn.bias
+torch.Size([2304])
+h.1.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.1.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.1.attn.c_proj.weight
+torch.Size([768, 768])
+h.1.attn.c_proj.bias
+torch.Size([768])
+h.1.ln_2.weight
+torch.Size([768])
+h.1.ln_2.bias
+torch.Size([768])
+h.1.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.1.mlp.c_fc.bias
+torch.Size([3072])
+h.1.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.1.mlp.c_proj.bias
+torch.Size([768])
+h.2.ln_1.weight
+torch.Size([768])
+h.2.ln_1.bias
+torch.Size([768])
+h.2.attn.c_attn.weight
+torch.Size([768, 2304])
+h.2.attn.c_attn.bias
+torch.Size([2304])
+h.2.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.2.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.2.attn.c_proj.weight
+torch.Size([768, 768])
+h.2.attn.c_proj.bias
+torch.Size([768])
+h.2.ln_2.weight
+torch.Size([768])
+h.2.ln_2.bias
+torch.Size([768])
+h.2.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.2.mlp.c_fc.bias
+torch.Size([3072])
+h.2.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.2.mlp.c_proj.bias
+torch.Size([768])
+h.3.ln_1.weight
+torch.Size([768])
+h.3.ln_1.bias
+torch.Size([768])
+h.3.attn.c_attn.weight
+torch.Size([768, 2304])
+h.3.attn.c_attn.bias
+torch.Size([2304])
+h.3.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.3.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.3.attn.c_proj.weight
+torch.Size([768, 768])
+h.3.attn.c_proj.bias
+torch.Size([768])
+h.3.ln_2.weight
+torch.Size([768])
+h.3.ln_2.bias
+torch.Size([768])
+h.3.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.3.mlp.c_fc.bias
+torch.Size([3072])
+h.3.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.3.mlp.c_proj.bias
+torch.Size([768])
+h.4.ln_1.weight
+torch.Size([768])
+h.4.ln_1.bias
+torch.Size([768])
+h.4.attn.c_attn.weight
+torch.Size([768, 2304])
+h.4.attn.c_attn.bias
+torch.Size([2304])
+h.4.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.4.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.4.attn.c_proj.weight
+torch.Size([768, 768])
+h.4.attn.c_proj.bias
+torch.Size([768])
+h.4.ln_2.weight
+torch.Size([768])
+h.4.ln_2.bias
+torch.Size([768])
+h.4.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.4.mlp.c_fc.bias
+torch.Size([3072])
+h.4.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.4.mlp.c_proj.bias
+torch.Size([768])
+h.5.ln_1.weight
+torch.Size([768])
+h.5.ln_1.bias
+torch.Size([768])
+h.5.attn.c_attn.weight
+torch.Size([768, 2304])
+h.5.attn.c_attn.bias
+torch.Size([2304])
+h.5.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.5.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.5.attn.c_proj.weight
+torch.Size([768, 768])
+h.5.attn.c_proj.bias
+torch.Size([768])
+h.5.ln_2.weight
+torch.Size([768])
+h.5.ln_2.bias
+torch.Size([768])
+h.5.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.5.mlp.c_fc.bias
+torch.Size([3072])
+h.5.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.5.mlp.c_proj.bias
+torch.Size([768])
+h.0.ln_1.weight
+torch.Size([768])
+h.0.ln_1.bias
+torch.Size([768])
+h.0.attn.c_attn.weight
+torch.Size([768, 2304])
+h.0.attn.c_attn.bias
+torch.Size([2304])
+h.0.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.0.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.0.attn.c_proj.weight
+torch.Size([768, 768])
+h.0.attn.c_proj.bias
+torch.Size([768])
+h.0.ln_2.weight
+torch.Size([768])
+h.0.ln_2.bias
+torch.Size([768])
+h.0.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.0.mlp.c_fc.bias
+torch.Size([3072])
+h.0.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.0.mlp.c_proj.bias
+torch.Size([768])
+h.1.ln_1.weight
+torch.Size([768])
+h.1.ln_1.bias
+torch.Size([768])
+h.1.attn.c_attn.weight
+torch.Size([768, 2304])
+h.1.attn.c_attn.bias
+torch.Size([2304])
+h.1.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.1.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.1.attn.c_proj.weight
+torch.Size([768, 768])
+h.1.attn.c_proj.bias
+torch.Size([768])
+h.1.ln_2.weight
+torch.Size([768])
+h.1.ln_2.bias
+torch.Size([768])
+h.1.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.1.mlp.c_fc.bias
+torch.Size([3072])
+h.1.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.1.mlp.c_proj.bias
+torch.Size([768])
+h.2.ln_1.weight
+torch.Size([768])
+h.2.ln_1.bias
+torch.Size([768])
+h.2.attn.c_attn.weight
+torch.Size([768, 2304])
+h.2.attn.c_attn.bias
+torch.Size([2304])
+h.2.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.2.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.2.attn.c_proj.weight
+torch.Size([768, 768])
+h.2.attn.c_proj.bias
+torch.Size([768])
+h.2.ln_2.weight
+torch.Size([768])
+h.2.ln_2.bias
+torch.Size([768])
+h.2.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.2.mlp.c_fc.bias
+torch.Size([3072])
+h.2.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.2.mlp.c_proj.bias
+torch.Size([768])
+h.3.ln_1.weight
+torch.Size([768])
+h.3.ln_1.bias
+torch.Size([768])
+h.3.attn.c_attn.weight
+torch.Size([768, 2304])
+h.3.attn.c_attn.bias
+torch.Size([2304])
+h.3.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.3.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.3.attn.c_proj.weight
+torch.Size([768, 768])
+h.3.attn.c_proj.bias
+torch.Size([768])
+h.3.ln_2.weight
+torch.Size([768])
+h.3.ln_2.bias
+torch.Size([768])
+h.3.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.3.mlp.c_fc.bias
+torch.Size([3072])
+h.3.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.3.mlp.c_proj.bias
+torch.Size([768])
+h.4.ln_1.weight
+torch.Size([768])
+h.4.ln_1.bias
+torch.Size([768])
+h.4.attn.c_attn.weight
+torch.Size([768, 2304])
+h.4.attn.c_attn.bias
+torch.Size([2304])
+h.4.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.4.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.4.attn.c_proj.weight
+torch.Size([768, 768])
+h.4.attn.c_proj.bias
+torch.Size([768])
+h.4.ln_2.weight
+torch.Size([768])
+h.4.ln_2.bias
+torch.Size([768])
+h.4.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.4.mlp.c_fc.bias
+torch.Size([3072])
+h.4.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.4.mlp.c_proj.bias
+torch.Size([768])
+h.5.ln_1.weight
+torch.Size([768])
+h.5.ln_1.bias
+torch.Size([768])
+h.5.attn.c_attn.weight
+torch.Size([768, 2304])
+h.5.attn.c_attn.bias
+torch.Size([2304])
+h.5.attn.c_attn.lora_A
+torch.Size([8, 768])
+h.5.attn.c_attn.lora_B
+torch.Size([1536, 4])
+h.5.attn.c_proj.weight
+torch.Size([768, 768])
+h.5.attn.c_proj.bias
+torch.Size([768])
+h.5.ln_2.weight
+torch.Size([768])
+h.5.ln_2.bias
+torch.Size([768])
+h.5.mlp.c_fc.weight
+torch.Size([768, 3072])
+h.5.mlp.c_fc.bias
+torch.Size([3072])
+h.5.mlp.c_proj.weight
+torch.Size([3072, 768])
+h.5.mlp.c_proj.bias
+torch.Size([768])
+86
+torch.Size([50257, 768])
+torch.Size([1024, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+87
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 2304])
+torch.Size([2304])
+torch.Size([8, 768])
+torch.Size([1536, 4])
+torch.Size([768, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768, 3072])
+torch.Size([3072])
+torch.Size([3072, 768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([768])
+torch.Size([50257, 768])
+set max_step: 1
