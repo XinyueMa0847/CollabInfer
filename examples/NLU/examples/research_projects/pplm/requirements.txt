@@ -5,7 +5,7 @@ psutil
 sacrebleu
 rouge-score
 tensorflow_datasets
-pytorch-lightning==1.0.4
+pytorch-lightning>=1.6.0
 matplotlib
 git-python==1.0.3
 faiss-cpu
@@ -19,4 +19,4 @@ pytest
 conllu
 sentencepiece != 0.1.92
 protobuf
-transformers==3.5.1
+transformers==4.36.0
