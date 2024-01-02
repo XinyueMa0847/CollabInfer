@@ -6,11 +6,17 @@ target:
   name: msrresrchvc
 
 environment:
+  # image: amlt-sing/pytorch-1.9.0-cuda11.3-a100
   image: amlt-sing/pytorch-1.9.0-cuda11.3-cudnn8-devel
   setup:
   - git clone https://github.com/XinyueMa0847/CollabInfer.git
   - pip install loralib
-  - cd LoRA ; pip install -r requirement.txt
+  - git clone --branch v4.16.1  https://github.com/huggingface/transformers.git ~/transformers
+  - pip install ~/transformers/
+  - pip install spacy 
+  - pip install tqdm 
+  - pip install tensorboard
+  - pip install progress
   - bash download_pretrained_checkpoints.sh
   - bash create_datasets.sh
   - cd ./eval
@@ -21,15 +27,15 @@ code:
   local_dir: $CONFIG_DIR/examples/NLG
 
 jobs:
-- name: lora-test
+- name: lora-gpt-sm
   # Number of nodes, number GPUs/CPUs to reserve and GPU/CPU memory
-  sku: G2-V100
+  sku: 16G2-V100
   mpi: False
   process_count_per_node: -1
   command:
-  - python -m torch.distributed.launch --nproc_per_node=1 src/gpt2_ft.py \
-      --train_data ./data/e2e/train.jsonl \
-      --valid_data ./data/e2e/valid.jsonl \
+  - torchrun --nproc_per_node=2 src/gpt2_ft.py \    
+      --train_data data/e2e/train.jsonl \
+      --valid_data data/e2e/valid.jsonl \
       --train_batch_size 8 \
       --grad_acc 1 \
       --valid_batch_size 4 \
@@ -50,9 +56,9 @@ jobs:
       --lora_alpha 32 \
       --lora_dropout 0.1 \
       --label_smooth 0.1 \
-      --work_dir ./trained_models/GPT2_M/e2e \
+      --work_dir ./trained_models/GPT2_S/e2e \
       --random_seed 110
-  sla_tier: Standard
+  sla_tier: Basic
   execution_mode: basic
   priority: medium
   azml_int: True

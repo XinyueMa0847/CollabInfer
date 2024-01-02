@@ -152,6 +152,8 @@ torchrun --nproc_per_node=4 src/gpt2_pipe_ft.py \
     --model_card gpt2.sm \
     --init_checkpoint ./pretrained_checkpoints/gpt2-pytorch_model.bin \
     --clip 0.0 \
+    --max_epoch 1\
+    --random_seed 110\
     --save_interval 1000 \
     --lora_dim 4 \
     --lora_alpha 32 \
@@ -162,6 +164,56 @@ torchrun --nproc_per_node=4 src/gpt2_pipe_ft.py \
     --ddp true\
     --partitions [0,2,6,10,12] \
     > pptest.log
+
+
+# PP test
+torchrun --nproc_per_node=2 src/test_pipe_rpc.py \
+    --world_size 2 \
+    --train_data ./data/e2e/sample_train.jsonl \
+    --valid_data ./data/e2e/sample_val.jsonl \
+    --train_batch_size 1 \
+    --grad_acc 1 \
+    --valid_batch_size 4 \
+    --seq_len 512 \
+    --model_card gpt2.sm \
+    --init_checkpoint ./pretrained_checkpoints/gpt2-pytorch_model.bin \
+    --clip 0.0 \
+    --max_epoch 1\
+    --random_seed 110\
+    --save_interval 1000 \
+    --lora_dim 4 \
+    --lora_alpha 32 \
+    --lora_dropout 0.1 \
+    --label_smooth 0.1 \
+    --work_dir ./trained_models/GPT2_S/test \
+    --pipeline 0 \
+    --ddp true\
+    --partitions [0,6,12] \
+    > pptest.log
+
+python src/test_single.py \
+    --train_data ./data/e2e/sample_train.jsonl \
+    --valid_data ./data/e2e/sample_val.jsonl \
+    --train_batch_size 1 \
+    --grad_acc 1 \
+    --valid_batch_size 4 \
+    --seq_len 512 \
+    --model_card gpt2.sm \
+    --init_checkpoint ./pretrained_checkpoints/gpt2-pytorch_model.bin \
+    --clip 0.0 \
+    --max_epoch 1\
+    --random_seed 110\
+    --save_interval 1000 \
+    --lora_dim 4 \
+    --lora_alpha 32 \
+    --lora_dropout 0.1 \
+    --label_smooth 0.1 \
+    --work_dir ./trained_models/GPT2_S/test \
+    --pipeline 0 \
+    --ddp true\
+    --partitions [0,2,6,10,12] \
+    > singletest.log
+
 
 
 2. Generate outputs from the trained model using beam search:
